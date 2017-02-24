@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 ### Copyright 2010 Manuel Carrasco Moñino. (manolo at apache.org) 
 ###
 ### Licensed under the Apache License, Version 2.0.
@@ -21,21 +21,20 @@
 ###     - Configure Jenkins to parse junit files from the generated folder
 ###
 
-asserts=00; errors=0; total=0; content=""
-date=`which gdate || which date` 2>/dev/null
+tests=0; failures=0; errors=0; totaltime=0; content=""
+date=$(which gdate || which date) 2>/dev/null
 
 # create output folder
-juDIR=`pwd`/results
+juDIR="$(pwd)/results"
 mkdir -p "$juDIR" || exit
 
 # The name of the suite is calculated based in your script name
-suite=`basename $0 | sed -e 's/.sh$//' | tr "." "_"`
+suite=$(basename "$0" | sed -e 's/.sh$//' | tr "." "_")
 
-# A wrapper for the eval method witch allows catching seg-faults and use tee
+# A wrapper for the eval method which allows catching seg-faults and use tee
 errfile=/tmp/evErr.$$.log
 eVal() {
-  eval "$1"
-  # stdout and stderr may currently be inverted (see below) so echo may write to stderr
+  eval "\"$1\""
   echo $? 2>&1 | tr -d "\n" > $errfile
 }
 
@@ -43,16 +42,22 @@ eVal() {
 juLogClean() {
   echo "+++ Removing old junit reports from: $juDIR "
   rm -f "$juDIR"/TEST-*
+
+  # Reset variables
+  tests=0
+  failures=0
+  errors=0
+  totaltime=0
+  content=""
 }
 
 # Execute a command and record its results 
 juLog() {
-  
   # parse arguments
   ya=""; icase=""
   while [ -z "$ya" ]; do  
     case "$1" in
-  	  -name=*)   name=$asserts-`echo "$1" | sed -e 's/-name=//'`;   shift;;
+  	  -name=*)   name=$(printf "%.2d" $tests)-$(echo "$1" | sed -e 's/-name=//');   shift;;
       -ierror=*) ereg=`echo "$1" | sed -e 's/-ierror=//'`; icase="-i"; shift;;
       -error=*)  ereg=`echo "$1" | sed -e 's/-error=//'`;  shift;;
       *)         ya=1;;
@@ -61,7 +66,7 @@ juLog() {
 
   # use first arg as name if it was not given 
   if [ -z "$name" ]; then
-    name="$asserts-$1" 
+    name="$(printf "%.2d" $tests)-$1"
     shift
   fi
 
@@ -78,24 +83,22 @@ juLog() {
   outf=/var/tmp/ju$$.txt
   errf=/var/tmp/ju$$-err.txt
   >$outf
-  echo ""                         | tee -a $outf
-  echo "+++ Running case: $name " | tee -a $outf
-  echo "+++ working dir: "`pwd`           | tee -a $outf
-  echo "+++ command: $cmd"            | tee -a $outf
-  ini=`$date +%s.%N`
-  # execute the command, temporarily swapping stderr and stdout so they can be tee'd to separate files,
-  # then swapping them back again so that the streams are written correctly for the invoking process
+  echo                            | tee -a $outf
+  echo "+++ Running case: $name"  | tee -a $outf
+  echo "+++ working dir: $(pwd)"  | tee -a $outf
+  echo "+++ command: $cmd"        | tee -a $outf
+  starttime=$($date +%s.%N)
   ((eVal "$cmd" | tee -a $outf) 3>&1 1>&2 2>&3 | tee $errf) 3>&1 1>&2 2>&3
-  evErr=`cat $errfile`
+  exitcode=$(cat $errfile)
   rm -f $errfile
-  end=`$date +%s.%N`
-  echo "+++ exit code: $evErr"        | tee -a $outf
-
+  endtime=$($date +%s.%N)
+  echo "+++ exit code: $exitcode" | tee -a $outf
+  
   # set the appropriate error, based in the exit code and the regex
-  [ $evErr != 0 ] && err=1 || err=0
-  out=`cat $outf | sed -e 's/^\([^+]\)/| \1/g'`
+  [ $exitcode != 0 ] && err=1 || err=0
+  out=$(cat $outf | sed -e 's/^\([^+]\)/| \1/g')
   if [ $err = 0 -a -n "$ereg" ]; then
-      H=`echo "$out" | egrep $icase "$ereg"`
+      H=$(echo "$out" | egrep $icase "$ereg")
       [ -n "$H" ] && err=1
   fi
   echo "+++ error: $err"         | tee -a $outf
@@ -103,22 +106,29 @@ juLog() {
 
   errMsg=`cat $errf`
   rm -f $errf
+  [ $err = 0 -a ! -z "$errMsg" ] && failed=1 || failed=0
+
   # calculate vars
-  asserts=`expr $asserts + 1`
-  asserts=`printf "%.2d" $asserts`
-  errors=`expr $errors + $err`
-  time=`echo "$end - $ini" | bc -l`
-  total=`echo "$total + $time" | bc -l`
+  tests=$(($tests + 1))
+  failures=$(($failures + $failed))
+  errors=$(($errors + $err))
+  time=$(echo "$endtime - $starttime" | bc -l)
+  totaltime=$(echo "$totaltime + $time" | bc -l)
 
   # write the junit xml report
   ## failure tag
-  [ $err = 0 ] && failure="" || failure="
+  [ $failed = 0 ] && failure="" || failure="
       <failure type=\"ScriptError\" message=\"Script Error\"><![CDATA[$errMsg]]></failure>
+  "
+  ## error tag
+  [ $err = 0 ] && error="" || error="
+      <error type=\"ScriptError\" message=\"Script Error\"><![CDATA[$errMsg]]></error>
   "
   ## testcase tag
   content="$content
-    <testcase assertions=\"1\" name=\"$name\" time=\"$time\">
+    <testcase name=\"$name\" status=\"run\" time=\"$time\" >
     $failure
+    $error
     <system-out>
 <![CDATA[
 $out
@@ -133,10 +143,9 @@ $errMsg
   "
   ## testsuite block
   cat <<EOF > "$juDIR/TEST-$suite.xml"
-  <testsuite failures="0" assertions="$assertions" name="$suite" tests="1" errors="$errors" time="$total">
+  <testsuite name="$suite" tests="$tests" failures="$failures" errors="$errors" time="$totaltime" timestamp="$($date -Iseconds | cut -d+ -f1)">
     $content
   </testsuite>
 EOF
 
 }
-
