@@ -9,7 +9,7 @@
 ### A library for shell scripts which creates reports in jUnit format.
 ### These reports can be used in Jenkins, or any other CI.
 ###
-### Usage: 
+### Usage:
 ###     - Include this file in your shell script
 ###     - Use juLog to call your command any time you want to produce a new report
 ###        Usage:   juLog <options> command arguments
@@ -51,20 +51,20 @@ juLogClean() {
   content=""
 }
 
-# Execute a command and record its results 
+# Execute a command and record its results
 juLog() {
   # parse arguments
   ya=""; icase=""
-  while [ -z "$ya" ]; do  
+  while [ -z "$ya" ]; do
     case "$1" in
   	  -name=*)   name=$(printf "%.2d" $tests)-$(echo "$1" | sed -e 's/-name=//');   shift;;
       -ierror=*) ereg=`echo "$1" | sed -e 's/-ierror=//'`; icase="-i"; shift;;
       -error=*)  ereg=`echo "$1" | sed -e 's/-error=//'`;  shift;;
       *)         ya=1;;
     esac
-  done  
+  done
 
-  # use first arg as name if it was not given 
+  # use first arg as name if it was not given
   if [ -z "$name" ]; then
     name="$(printf "%.2d" $tests)-$1"
     shift
@@ -89,11 +89,11 @@ juLog() {
   echo "+++ command: $cmd"        | tee -a $outf
   starttime=$($date +%s.%N)
   ((eVal "$cmd" | tee -a $outf) 3>&1 1>&2 2>&3 | tee $errf) 3>&1 1>&2 2>&3
-  exitcode=$(cat $errfile)
+  exitcode=$([ -e "$errfile" ] && cat "$errfile" || echo "0")
   rm -f $errfile
   endtime=$($date +%s.%N)
   echo "+++ exit code: $exitcode" | tee -a $outf
-  
+
   # set the appropriate error, based in the exit code and the regex
   [ $exitcode != 0 ] && err=1 || err=0
   out=$(cat $outf | sed -e 's/^\([^+]\)/| \1/g')
@@ -104,7 +104,7 @@ juLog() {
   echo "+++ error: $err"         | tee -a $outf
   rm -f $outf
 
-  errMsg=`cat $errf`
+  errMsg=$([ -e "$errf" ] && cat "$errf" || echo "")
   rm -f $errf
   [ $err = 0 -a ! -z "$errMsg" ] && failed=1 || failed=0
 
@@ -148,4 +148,5 @@ $errMsg
   </testsuite>
 EOF
 
+  return $exitcode
 }
