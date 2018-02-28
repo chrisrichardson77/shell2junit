@@ -1,5 +1,5 @@
 #!/bin/bash
-### Copyright 2010 Manuel Carrasco Moñino. (manolo at apache.org) 
+### Copyright 2010 Manuel Carrasco Moñino. (manolo at apache.org)
 ###
 ### Licensed under the Apache License, Version 2.0.
 ### You may obtain a copy of it at
@@ -141,11 +141,15 @@ $errMsg
     </system-err>
     </testcase>
   "
+  local formatted_date="$($date -Iseconds | cut -d+ -f1)"
   ## testsuite block
   cat <<EOF > "$juDIR/TEST-$suite.xml"
-  <testsuite name="$suite" tests="$tests" failures="$failures" errors="$errors" time="$totaltime" timestamp="$($date -Iseconds | cut -d+ -f1)">
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites tests="$tests" failures="$failures" disabled="0" errors="$errors" timestamp="$formatted_date" time="$totaltime" name="AllTests">
+  <testsuite name="$suite" tests="$tests" failures="$failures" errors="$errors" time="$totaltime" timestamp="$formatted_date">
     $content
   </testsuite>
+</testsuites>
 EOF
 
   return $exitcode
